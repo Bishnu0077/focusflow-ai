@@ -3,20 +3,24 @@ import { createClient } from '@/lib/supabase/server';
 import { aiSuggestRatelimit, checkRateLimit } from '@/lib/ratelimit';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashIp } from '@/lib/utils';
+import type { Database } from '@/types/database';
 
 function getIp(req: NextRequest): string {
   const forwarded = req.headers.get('x-forwarded-for');
   return forwarded?.split(',')[0]?.trim() || 'unknown';
 }
 
+type SuggestionInsert = Database['public']['Tables']['ai_suggestions']['Insert'];
+
 // Deterministic "AI" suggestion engine based on user data patterns
-function generateSuggestions(userId: string, tasks: any[], habits: any[], sessions: any[]) {
-  const suggestions = [];
+function generateSuggestions(userId: string, tasks: any[], habits: any[], sessions: any[]): SuggestionInsert[] {
+  const suggestions: SuggestionInsert[] = [];
 
   // Overdue tasks insight
   const overdue = tasks.filter((t) => t.due_date && new Date(t.due_date) < new Date() && t.status !== 'done');
   if (overdue.length > 0) {
     suggestions.push({
+      user_id: userId,
       type: 'task',
       content: `You have ${overdue.length} overdue task${overdue.length > 1 ? 's' : ''}. Consider rescheduling or breaking them into smaller steps.`,
       reason: 'overdue_tasks',
@@ -27,6 +31,7 @@ function generateSuggestions(userId: string, tasks: any[], habits: any[], sessio
   const todo = tasks.filter((t) => t.status === 'todo').length;
   if (todo > 7) {
     suggestions.push({
+      user_id: userId,
       type: 'task',
       content: 'Your task list is getting long. Try the "2-minute rule": if a task takes <2 mins, do it now.',
       reason: 'high_backlog',
@@ -40,6 +45,7 @@ function generateSuggestions(userId: string, tasks: any[], habits: any[], sessio
 
   if (totalFocusMin < 30 && sessions.length > 0) {
     suggestions.push({
+      user_id: userId,
       type: 'focus',
       content: "You've focused less than 30 minutes today. A quick 25-minute pomodoro could build momentum.",
       reason: 'low_focus_today',
@@ -47,6 +53,7 @@ function generateSuggestions(userId: string, tasks: any[], habits: any[], sessio
   }
   if (totalFocusMin > 120) {
     suggestions.push({
+      user_id: userId,
       type: 'focus',
       content: "Great focus today! Remember to take a 5-minute walk to avoid burnout.",
       reason: 'high_focus_today',
@@ -57,6 +64,7 @@ function generateSuggestions(userId: string, tasks: any[], habits: any[], sessio
   const weakHabits = habits.filter((h) => h.streak === 0);
   if (weakHabits.length > 0) {
     suggestions.push({
+      user_id: userId,
       type: 'habit',
       content: `Restart your "${weakHabits[0].name}" habit today. Streaks are easier to rebuild than you think.`,
       reason: 'broken_streak',
@@ -66,13 +74,14 @@ function generateSuggestions(userId: string, tasks: any[], habits: any[], sessio
   // Generic if none matched
   if (suggestions.length === 0) {
     suggestions.push({
+      user_id: userId,
       type: 'general',
       content: 'Plan your top 3 priorities for tomorrow before ending the day.',
       reason: 'default',
     });
   }
 
-  return suggestions.map((s) => ({ ...s, user_id: userId }));
+  return suggestions;
 }
 
 export async function POST(req: NextRequest) {
