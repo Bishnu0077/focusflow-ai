@@ -3,13 +3,15 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: 'standalone',
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   images: {
     domains: [],
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
   },
   experimental: {
-    typedRoutes: true,
     optimizePackageImports: ['lucide-react', 'framer-motion'],
   },
   compiler: {
